@@ -1858,6 +1858,35 @@ function escapeHtmlForDoc(s){
   return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
 }
 
+// Giữ URL đủ lâu để trình duyệt di động có thời gian nhận file.
+// Luôn có nút tải thủ công khi trình duyệt chặn tải tự động.
+let currentAnswerDownloadURL = null;
+function offerManualDownload(blob, filename, showMessage, autoDownload=false){
+  if(currentAnswerDownloadURL) URL.revokeObjectURL(currentAnswerDownloadURL);
+  const url = URL.createObjectURL(blob);
+  currentAnswerDownloadURL = url;
+  let link = document.getElementById('gManualDownloadLink');
+  if(!link){
+    link = document.createElement('a');
+    link.id = 'gManualDownloadLink';
+    link.className = 'gsubmit-btn';
+    link.style.cssText = 'display:inline-block;margin-top:12px;text-decoration:none;text-align:center;max-width:100%;overflow-wrap:anywhere;';
+    const submitBtn = document.getElementById('gSubmitBtn');
+    if(submitBtn) submitBtn.insertAdjacentElement('afterend', link);
+    else document.body.appendChild(link);
+  }
+  link.href = url;
+  link.download = filename;
+  link.textContent = '📄 Tải file Word bài làm (bấm tại đây)';
+  link.style.display = 'inline-block';
+  if(autoDownload){
+    link.click();
+    showMessage('✓ Đã yêu cầu tải bài làm. Nếu chưa thấy file, hãy bấm nút Tải file Word bên dưới.');
+  }else{
+    showMessage('📄 Bấm nút Tải file Word bên dưới. Trên iPhone, nếu file mở ra thay vì tải, hãy bấm Chia sẻ → Lưu vào Tệp. Nếu mở bằng Zalo/Messenger, hãy chọn Mở trong Safari hoặc Chrome.');
+  }
+}
+
 function exportLessonAnswers(){
   const nameInput = document.getElementById('gStudentName');
   const studentName = nameInput.value.trim();
@@ -1934,22 +1963,29 @@ function exportLessonAnswers(){
     </body>
     </html>`;
 
-  const blob = new Blob(['\ufeff', htmlDoc], {type:'application/msword'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
+  const blob = new Blob(['\ufeff', htmlDoc], {type:'application/msword;charset=utf-8'});
   const safeLesson = String(lesson.id).replace(/[^a-zA-Z0-9]/g,'') || 'OnTap';
   const safeName = studentName.replace(/[^\p{L}\p{N}]+/gu,'_');
-  a.href = url;
-  a.download = `BaiTap_HSK1_Bai${safeLesson}_${safeName}.doc`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-
+  const filename = `BaiTap_HSK1_Bai${safeLesson}_${safeName}.doc`;
   const msgEl = document.getElementById('gSubmitMsg');
-  if(msgEl){
-    msgEl.textContent = `✓ Đã tải file bài làm (${answeredCount}/${grammarAnswerRegistry.length} câu đã làm). Hãy gửi file này cho giáo viên qua Zalo/Messenger nhé!`;
-    msgEl.classList.add('show');
+  const showMessage = (message) => {
+    if(msgEl){ msgEl.textContent = message; msgEl.classList.add('show'); }
+  };
+
+  // Trên điện thoại: chia sẻ file qua bảng chia sẻ hệ điều hành (Lưu vào Tệp,
+  // Google Drive, Zalo...). Trình duyệt không hỗ trợ thì dùng liên kết tải thủ công.
+  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+    (navigator.maxTouchPoints > 1 && /Macintosh/i.test(navigator.userAgent));
+  const file = new File([blob], filename, {type:'application/msword'});
+  if(isMobile && navigator.share && navigator.canShare && navigator.canShare({files:[file]})){
+    navigator.share({files:[file], title:'Bài làm tiếng Trung HSK1'})
+      .then(()=>showMessage('✓ Đã mở chức năng chia sẻ bài làm. Bạn có thể lưu vào Tệp hoặc gửi cho giáo viên.'))
+      .catch(err=>{
+        if(err && err.name === 'AbortError') return;
+        offerManualDownload(blob, filename, showMessage);
+      });
+  }else{
+    offerManualDownload(blob, filename, showMessage, !isMobile);
   }
 }
 
